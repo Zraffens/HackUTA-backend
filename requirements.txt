@@ -1,0 +1,9 @@
+Flask
+Flask-RESTx
+Flask-SQLAlchemy
+Flask-Migrate
+psycopg2-binary
+Flask-JWT-Extended
+python-dotenv
+werkzeug
+Flask-Cors
