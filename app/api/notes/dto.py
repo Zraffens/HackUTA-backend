@@ -22,3 +22,41 @@ class NoteDto:
     note_create.add_argument('description', type=str, help='Description of the note', location='form')
     note_create.add_argument('is_public', type=bool, default=True, help='Is the note public?', location='form')
     note_create.add_argument('file', type=FileStorage, required=True, help='The note PDF file', location='files')
+    
+    # Comment DTOs
+    comment_author = api.model('CommentAuthor', {
+        'username': fields.String(description='comment author username'),
+    })
+    
+    comment = api.model('Comment', {
+        'id': fields.Integer(description='comment id'),
+        'content': fields.String(description='comment content'),
+        'created_at': fields.DateTime(description='comment creation date'),
+        'author': fields.Nested(comment_author)
+    })
+    
+    comment_create = api.model('CommentCreate', {
+        'content': fields.String(required=True, description='comment content')
+    })
+    
+    # Reaction DTOs
+    reaction_create = api.model('ReactionCreate', {
+        'reaction_type': fields.String(required=True, description='Type of reaction: concise, detailed, or readable')
+    })
+    
+    reaction_summary = api.model('ReactionSummary', {
+        'concise': fields.Integer(description='Number of concise reactions'),
+        'detailed': fields.Integer(description='Number of detailed reactions'),
+        'readable': fields.Integer(description='Number of readable reactions')
+    })
+    
+    # Collaborator DTOs
+    collaborator_add = api.model('CollaboratorAdd', {
+        'username': fields.String(required=True, description='Username of user to add as collaborator')
+    })
+    
+    collaborator = api.model('Collaborator', {
+        'public_id': fields.String(description='User public id'),
+        'username': fields.String(description='Username'),
+        'email': fields.String(description='Email')
+    })

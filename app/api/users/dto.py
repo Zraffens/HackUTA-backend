@@ -14,3 +14,13 @@ class UserDto:
         'username': fields.String(required=True),
         'password': fields.String(required=True),
     })
+    
+    user_profile = api.model('UserProfile', {
+        'public_id': fields.String,
+        'username': fields.String,
+        'profile_bio': fields.String,
+        'created_at': fields.DateTime,
+        'followers_count': fields.Integer,
+        'following_count': fields.Integer,
+        'notes_count': fields.Integer
+    })
