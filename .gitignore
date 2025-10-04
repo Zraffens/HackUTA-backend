@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+uploads/
 eggs/
 .eggs/
 lib/
@@ -112,3 +113,4 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
