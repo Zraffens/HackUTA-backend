@@ -485,22 +485,33 @@ class NoteCollaborators(Resource):
 class NoteMarkdown(Resource):
     def get(self, public_id):
         """Get the markdown content of a note"""
+        logger.info(f"Markdown request for note: {public_id}")
+        
         note = Note.query.filter_by(public_id=public_id).first_or_404()
+        logger.info(f"Found note: {note.title}, OCR status: {note.ocr_status}")
         
         # Check OCR status
         if note.ocr_status == 'pending':
+            logger.info(f"Note {public_id} OCR is pending")
             return {'message': 'OCR conversion is pending', 'status': 'pending'}, 202
         elif note.ocr_status == 'processing':
+            logger.info(f"Note {public_id} OCR is processing")
             return {'message': 'OCR conversion is in progress', 'status': 'processing'}, 202
         elif note.ocr_status == 'failed':
+            logger.warning(f"Note {public_id} OCR failed")
             return {'message': 'OCR conversion failed', 'status': 'failed'}, 500
         
         # Check if markdown file exists with path correction
         if not note.markdown_path:
+            logger.warning(f"Note {public_id} has no markdown path")
             return {'message': 'Markdown file not found', 'status': 'not_found'}, 404
         
+        logger.info(f"Note {public_id} markdown path: {note.markdown_path}")
         corrected_path = fix_file_path(note.markdown_path)
+        logger.info(f"Corrected markdown path: {corrected_path}")
+        
         if not corrected_path or not os.path.exists(corrected_path):
+            logger.error(f"Markdown file does not exist: {corrected_path}")
             return {'message': 'Markdown file not found', 'status': 'not_found'}, 404
         
         # Read and return markdown content
@@ -508,6 +519,7 @@ class NoteMarkdown(Resource):
             with open(corrected_path, 'r', encoding='utf-8') as f:
                 markdown_content = f.read()
             
+            logger.info(f"Successfully loaded markdown for {public_id}, length: {len(markdown_content)}")
             return {
                 'status': 'completed',
                 'markdown': markdown_content,
@@ -516,6 +528,38 @@ class NoteMarkdown(Resource):
         except Exception as e:
             logger.error(f"Error reading markdown file: {str(e)}")
             return {'message': 'Error reading markdown file', 'status': 'error'}, 500
+
+
+@api.route('/<public_id>/markdown/status')
+@api.param('public_id', 'The note identifier')
+class NoteMarkdownStatus(Resource):
+    def get(self, public_id):
+        """Get markdown availability status for debugging"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        status_info = {
+            'note_id': public_id,
+            'title': note.title,
+            'ocr_status': note.ocr_status,
+            'has_markdown_path': bool(note.markdown_path),
+            'markdown_path': note.markdown_path,
+        }
+        
+        if note.markdown_path:
+            corrected_path = fix_file_path(note.markdown_path)
+            status_info['corrected_path'] = corrected_path
+            status_info['file_exists'] = os.path.exists(corrected_path) if corrected_path else False
+            
+            if corrected_path and os.path.exists(corrected_path):
+                try:
+                    with open(corrected_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        status_info['file_size'] = len(content)
+                        status_info['preview'] = content[:200] + '...' if len(content) > 200 else content
+                except Exception as e:
+                    status_info['read_error'] = str(e)
+        
+        return status_info, 200
 
 
 @api.route('/<public_id>/file')
