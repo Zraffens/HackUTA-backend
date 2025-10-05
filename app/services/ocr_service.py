@@ -14,13 +14,19 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
-MARKDOWN_OUTPUT_DIR = 'uploads/markdown'
+
+def get_markdown_output_dir():
+    """Get absolute path to markdown output directory"""
+    # Get project root directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(current_dir))
+    return os.path.join(project_root, 'uploads', 'markdown')
 
 class GeminiOCRService:
     """Service for handling OCR conversion using Google Gemini AI"""
     
     def __init__(self):
-        self.markdown_dir = MARKDOWN_OUTPUT_DIR
+        self.markdown_dir = get_markdown_output_dir()
         self.api_key = GEMINI_API_KEY
         self.client = None
         
@@ -87,6 +93,7 @@ class GeminiOCRService:
             
             # Save markdown to file
             final_path = os.path.join(self.markdown_dir, f"{output_filename}.md")
+            final_path = os.path.normpath(final_path)  # Normalize path separators
             with open(final_path, 'w', encoding='utf-8') as f:
                 f.write(markdown_content)
             

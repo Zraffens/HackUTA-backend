@@ -15,6 +15,16 @@ def get_upload_folder():
         # Fallback for when not in app context
         return os.path.join(os.getcwd(), 'uploads', 'notes')
 
+def get_markdown_folder():
+    """Get absolute path to markdown upload folder"""
+    if current_app:
+        # Get the project root directory (where run.py is located)
+        project_root = os.path.dirname(current_app.root_path)
+        return os.path.join(project_root, 'uploads', 'markdown')
+    else:
+        # Fallback for when not in app context
+        return os.path.join(os.getcwd(), 'uploads', 'markdown')
+
 ALLOWED_EXTENSIONS = {'pdf', 'jpg', 'jpeg', 'png'}  # Added image formats for MonkeyOCR
 
 def allowed_file(filename):
@@ -58,26 +68,37 @@ def get_file_extension(filename):
 def fix_file_path(stored_path):
     """
     Fix file paths that might have incorrect directory structure.
-    This handles legacy paths that might include 'app' incorrectly.
+    This handles legacy paths that might include 'app' incorrectly and normalizes separators.
     
     Args:
         stored_path: Path stored in database
         
     Returns:
-        str: Corrected absolute path to the file
+        str: Corrected absolute path to the file with normalized separators
     """
     if not stored_path:
         return None
     
-    # If already absolute and exists, return as-is
-    if os.path.isabs(stored_path) and os.path.exists(stored_path):
-        return stored_path
+    # Normalize path separators first
+    normalized_stored_path = os.path.normpath(stored_path)
+    
+    # If already absolute and exists, return normalized version
+    if os.path.isabs(normalized_stored_path) and os.path.exists(normalized_stored_path):
+        return normalized_stored_path
     
     # Extract just the filename from the stored path
     filename = os.path.basename(stored_path)
     
-    # Construct correct path
-    correct_path = os.path.join(get_upload_folder(), filename)
+    # Determine if this is a markdown file or regular upload
+    if 'markdown' in stored_path or filename.endswith('.md'):
+        # This is a markdown file
+        correct_path = os.path.join(get_markdown_folder(), filename)
+    else:
+        # This is a regular upload file
+        correct_path = os.path.join(get_upload_folder(), filename)
+    
+    # Normalize the correct path
+    correct_path = os.path.normpath(correct_path)
     
     # If the correct path exists, return it
     if os.path.exists(correct_path):
@@ -87,8 +108,9 @@ def fix_file_path(stored_path):
     if not os.path.isabs(stored_path):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         absolute_path = os.path.join(project_root, stored_path)
+        absolute_path = os.path.normpath(absolute_path)  # Normalize separators
         if os.path.exists(absolute_path):
             return absolute_path
     
-    # Return the stored path as-is (will fail later with proper error)
-    return stored_path
+    # Return the normalized stored path (will fail later with proper error)
+    return normalized_stored_path

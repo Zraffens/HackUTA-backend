@@ -51,6 +51,23 @@ def fix_database_file_paths():
         else:
             print("No file paths needed fixing.")
         
+        # Additional verification - check for mixed separators
+        print("\nChecking for mixed path separators...")
+        mixed_separators_count = 0
+        
+        for note in notes:
+            if note.file_path and ('/' in note.file_path and '\\' in note.file_path):
+                print(f"Mixed separators in file_path for note {note.public_id}: {note.file_path}")
+                mixed_separators_count += 1
+            if note.markdown_path and ('/' in note.markdown_path and '\\' in note.markdown_path):
+                print(f"Mixed separators in markdown_path for note {note.public_id}: {note.markdown_path}")
+                mixed_separators_count += 1
+        
+        if mixed_separators_count > 0:
+            print(f"Found {mixed_separators_count} paths with mixed separators (these should be fixed by normalization)")
+        else:
+            print("No mixed separators found in paths")
+        
         print("File path fix complete!")
 
 if __name__ == "__main__":
