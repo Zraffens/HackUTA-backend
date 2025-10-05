@@ -163,6 +163,6 @@ class UserStats(Resource):
             'total_downloads': total_downloads,
             'followers_count': user.followers.count(),
             'following_count': user.following.count(),
-            'bookmarks_count': user.bookmarked_notes.count(),
+            'bookmarks_count': len(user.bookmarked_notes),
             'comments_count': len(user.comments)
         }, 200
