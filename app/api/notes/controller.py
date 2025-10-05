@@ -170,118 +170,180 @@ class NoteRecommended(Resource):
     })
     @api.marshal_with(_note_paginated)
     def get(self):
-        """Get personalized note recommendations"""
-        current_user_public_id = get_jwt_identity()
-        user = User.query.filter_by(public_id=current_user_public_id).first()
-        
-        from ...models.tag import Tag
-        from ...models.course import Course
-        from sqlalchemy import func, distinct
-        
-        # Build recommendation score
-        recommendations = []
-        scored_notes = {}
-        
-        # Strategy 1: Notes with tags from bookmarked notes (weight: 3)
-        bookmarked_tags = db.session.query(Tag).join(Note.tags).join(
-            user.bookmarked_notes
-        ).distinct().all()
-        
-        if bookmarked_tags:
-            tag_ids = [tag.id for tag in bookmarked_tags]
-            from ...models.associations import note_tags
-            notes_with_similar_tags = db.session.query(Note).join(note_tags).filter(
-                note_tags.c.tag_id.in_(tag_ids),
-                Note.is_public == True,
-                Note.owner_id != user.id  # Exclude own notes
-            ).distinct().all()
+        """Get personalized note recommendations using multi-strategy algorithm"""
+        try:
+            current_user_public_id = get_jwt_identity()
+            user = User.query.filter_by(public_id=current_user_public_id).first()
             
-            for note in notes_with_similar_tags:
-                if note.public_id not in scored_notes:
-                    scored_notes[note.public_id] = {'note': note, 'score': 0}
-                scored_notes[note.public_id]['score'] += 3
-        
-        # Strategy 2: Notes from followed users (weight: 5)
-        followed_users = user.following.all()
-        if followed_users:
-            followed_user_ids = [u.id for u in followed_users]
-            notes_from_followed = Note.query.filter(
-                Note.owner_id.in_(followed_user_ids),
-                Note.is_public == True
-            ).all()
+            if not user:
+                return {'message': 'User not found'}, 404
             
-            for note in notes_from_followed:
-                if note.public_id not in scored_notes:
-                    scored_notes[note.public_id] = {'note': note, 'score': 0}
-                scored_notes[note.public_id]['score'] += 5
-        
-        # Strategy 3: Notes from user's enrolled courses (weight: 4)
-        from ...models.associations import course_users
-        user_courses = db.session.query(Course).join(course_users).filter(
-            course_users.c.user_id == user.id
-        ).all()
-        
-        if user_courses:
-            from ...models.associations import note_courses
-            course_ids = [c.id for c in user_courses]
-            notes_from_courses = db.session.query(Note).join(note_courses).filter(
-                note_courses.c.course_id.in_(course_ids),
-                Note.is_public == True,
-                Note.owner_id != user.id
-            ).distinct().all()
+            from ...models.tag import Tag
+            from ...models.course import Course
+            from ...models.associations import note_tags, user_bookmarks, course_users, note_courses
+            from sqlalchemy import func, distinct
+            from sqlalchemy.orm import joinedload
             
-            for note in notes_from_courses:
-                if note.public_id not in scored_notes:
-                    scored_notes[note.public_id] = {'note': note, 'score': 0}
-                scored_notes[note.public_id]['score'] += 4
-        
-        # Strategy 4: Popular notes (most views/bookmarks) (weight: 1)
-        popular_notes = Note.query.filter(
-            Note.is_public == True,
-            Note.owner_id != user.id
-        ).order_by(Note.view_count.desc()).limit(20).all()
-        
-        for note in popular_notes:
-            if note.public_id not in scored_notes:
-                scored_notes[note.public_id] = {'note': note, 'score': 0}
-            scored_notes[note.public_id]['score'] += 1
-        
-        # Sort by score and extract notes
-        sorted_recommendations = sorted(
-            scored_notes.values(),
-            key=lambda x: x['score'],
-            reverse=True
-        )
-        recommended_notes = [item['note'] for item in sorted_recommendations]
-        
-        # If no recommendations, return popular public notes
-        if not recommended_notes:
-            recommended_notes = Note.query.filter(
-                Note.is_public == True,
-                Note.owner_id != user.id
-            ).order_by(Note.view_count.desc()).all()
-        
-        # Manually paginate the list
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 10, type=int)
-        per_page = max(1, min(per_page, 100))
-        page = max(1, page)
-        
-        start = (page - 1) * per_page
-        end = start + per_page
-        
-        total = len(recommended_notes)
-        items = recommended_notes[start:end]
-        pages = (total + per_page - 1) // per_page
-        
-        return {
-            'items': items,
-            'total': total,
-            'pages': pages,
-            'current_page': page,
-            'has_next': page < pages,
-            'has_prev': page > 1
-        }
+            # Build recommendation score
+            scored_notes = {}
+            
+            # Strategy 1: Notes with tags from bookmarked notes (weight: 3)
+            try:
+                # Get tags from bookmarked notes
+                bookmarked_note_ids = db.session.query(user_bookmarks.c.note_id).filter(
+                    user_bookmarks.c.user_id == user.id
+                ).subquery()
+                
+                bookmarked_tag_ids = db.session.query(note_tags.c.tag_id).filter(
+                    note_tags.c.note_id.in_(bookmarked_note_ids)
+                ).distinct().subquery()
+                
+                if db.session.query(bookmarked_tag_ids).first():
+                    # Get notes with similar tags (excluding user's own notes and bookmarked notes)
+                    similar_notes = db.session.query(Note).join(User, Note.owner_id == User.id).join(note_tags).filter(
+                        note_tags.c.tag_id.in_(bookmarked_tag_ids),
+                        Note.is_public == True,
+                        Note.owner_id != user.id,
+                        ~Note.id.in_(bookmarked_note_ids)  # Exclude already bookmarked
+                    ).distinct().all()
+                    
+                    for note in similar_notes:
+                        if note.public_id not in scored_notes:
+                            scored_notes[note.public_id] = {'note': note, 'score': 0}
+                        scored_notes[note.public_id]['score'] += 3
+            except Exception as e:
+                logger.warning(f"Strategy 1 (bookmarked tags) failed: {str(e)}")
+            
+            # Strategy 2: Notes from followed users (weight: 5)
+            try:
+                followed_users = user.following.all()
+                if followed_users:
+                    followed_user_ids = [u.id for u in followed_users]
+                    notes_from_followed = Note.query.join(User, Note.owner_id == User.id).filter(
+                        Note.owner_id.in_(followed_user_ids),
+                        Note.is_public == True
+                    ).all()
+                    
+                    for note in notes_from_followed:
+                        if note.public_id not in scored_notes:
+                            scored_notes[note.public_id] = {'note': note, 'score': 0}
+                        scored_notes[note.public_id]['score'] += 5
+            except Exception as e:
+                logger.warning(f"Strategy 2 (followed users) failed: {str(e)}")
+            
+            # Strategy 3: Notes from user's enrolled courses (weight: 4)
+            try:
+                user_course_ids = db.session.query(course_users.c.course_id).filter(
+                    course_users.c.user_id == user.id
+                ).subquery()
+                
+                if db.session.query(user_course_ids).first():
+                    notes_from_courses = db.session.query(Note).join(User, Note.owner_id == User.id).join(note_courses).filter(
+                        note_courses.c.course_id.in_(user_course_ids),
+                        Note.is_public == True,
+                        Note.owner_id != user.id
+                    ).distinct().all()
+                    
+                    for note in notes_from_courses:
+                        if note.public_id not in scored_notes:
+                            scored_notes[note.public_id] = {'note': note, 'score': 0}
+                        scored_notes[note.public_id]['score'] += 4
+            except Exception as e:
+                logger.warning(f"Strategy 3 (course notes) failed: {str(e)}")
+            
+            # Strategy 4: Popular notes by view count (weight: 1)
+            try:
+                popular_notes = Note.query.join(User, Note.owner_id == User.id).filter(
+                    Note.is_public == True,
+                    Note.owner_id != user.id,
+                    Note.view_count > 0
+                ).order_by(Note.view_count.desc()).limit(20).all()
+                
+                for note in popular_notes:
+                    if note.public_id not in scored_notes:
+                        scored_notes[note.public_id] = {'note': note, 'score': 0}
+                    scored_notes[note.public_id]['score'] += 1
+            except Exception as e:
+                logger.warning(f"Strategy 4 (popular notes) failed: {str(e)}")
+            
+            # Strategy 5: Recently created public notes (weight: 0.5)
+            try:
+                from datetime import datetime, timedelta
+                recent_cutoff = datetime.utcnow() - timedelta(days=7)
+                recent_notes = Note.query.join(User, Note.owner_id == User.id).filter(
+                    Note.is_public == True,
+                    Note.owner_id != user.id,
+                    Note.created_at >= recent_cutoff
+                ).order_by(Note.created_at.desc()).limit(15).all()
+                
+                for note in recent_notes:
+                    if note.public_id not in scored_notes:
+                        scored_notes[note.public_id] = {'note': note, 'score': 0}
+                    scored_notes[note.public_id]['score'] += 0.5
+            except Exception as e:
+                logger.warning(f"Strategy 5 (recent notes) failed: {str(e)}")
+            
+            # Sort by score and extract notes
+            if scored_notes:
+                sorted_recommendations = sorted(
+                    scored_notes.values(),
+                    key=lambda x: (-x['score'], -x['note'].view_count, -x['note'].id)  # Secondary sort by views and ID
+                )
+                recommended_notes = [item['note'] for item in sorted_recommendations]
+            else:
+                # Fallback: return popular public notes if no recommendations
+                recommended_notes = Note.query.join(User, Note.owner_id == User.id).filter(
+                    Note.is_public == True,
+                    Note.owner_id != user.id
+                ).order_by(Note.view_count.desc()).limit(50).all()
+            
+            # Manually paginate the list
+            page = request.args.get('page', 1, type=int)
+            per_page = request.args.get('per_page', 10, type=int)
+            per_page = max(1, min(per_page, 100))
+            page = max(1, page)
+            
+            start = (page - 1) * per_page
+            end = start + per_page
+            
+            total = len(recommended_notes)
+            items = recommended_notes[start:end]
+            pages = (total + per_page - 1) // per_page if total > 0 else 1
+            
+            return {
+                'items': items,
+                'total': total,
+                'pages': pages,
+                'current_page': page,
+                'has_next': page < pages,
+                'has_prev': page > 1
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in recommendations: {str(e)}", exc_info=True)
+            # Return fallback recommendations
+            try:
+                fallback_notes = Note.query.join(User, Note.owner_id == User.id).filter(
+                    Note.is_public == True
+                ).order_by(Note.view_count.desc()).limit(10).all()
+                
+                return {
+                    'items': fallback_notes,
+                    'total': len(fallback_notes),
+                    'pages': 1,
+                    'current_page': 1,
+                    'has_next': False,
+                    'has_prev': False
+                }
+            except:
+                return {
+                    'items': [],
+                    'total': 0,
+                    'pages': 1,
+                    'current_page': 1,
+                    'has_next': False,
+                    'has_prev': False
+                }
 
 
 @api.route('/<public_id>')

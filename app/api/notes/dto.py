@@ -16,7 +16,8 @@ class NoteDto:
         'created_at': fields.DateTime(description='note creation date'),
         'owner': fields.Nested(note_owner),
         'ocr_status': fields.String(description='OCR conversion status: pending, processing, completed, failed'),
-        'has_markdown': fields.Boolean(description='Whether markdown version is available')
+        'has_markdown': fields.Boolean(description='Whether markdown version is available'),
+        'markdown_url': fields.String(description='URL endpoint to fetch markdown content')
     })
     
     note_paginated = api.model('NotePaginated', {

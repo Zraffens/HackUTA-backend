@@ -108,11 +108,16 @@ class UserBookmarks(Resource):
     def get(self):
         """Get current user's bookmarked notes (paginated)"""
         from ...api.notes.dto import NoteDto
+        from ...models.associations import user_bookmarks
         current_user_public_id = get_jwt_identity()
         user = User.query.filter_by(public_id=current_user_public_id).first()
         
-        # Get paginated bookmarks
-        result = paginate_query(user.bookmarked_notes)
+        # Get paginated bookmarks using a proper query
+        bookmarks_query = Note.query.join(user_bookmarks).filter(
+            user_bookmarks.c.user_id == user.id
+        ).order_by(user_bookmarks.c.bookmarked_at.desc())
+        
+        result = paginate_query(bookmarks_query)
         
         # Marshal the notes
         from flask_restx import marshal

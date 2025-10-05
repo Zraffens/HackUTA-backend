@@ -2,6 +2,7 @@ from app.extensions import db
 import uuid
 from datetime import datetime
 from .associations import note_collaborators, note_courses, note_tags, user_bookmarks
+import os
 
 class Note(db.Model):
     __tablename__ = 'note'
@@ -29,3 +30,15 @@ class Note(db.Model):
                            back_populates='notes')
     bookmarked_by = db.relationship('User', secondary=user_bookmarks, lazy='subquery',
                                     backref=db.backref('bookmarked_notes', lazy=True))
+
+    @property
+    def has_markdown(self):
+        """Check if note has markdown content available"""
+        return (self.ocr_status == 'completed' and 
+                self.markdown_path and 
+                os.path.exists(self.markdown_path))
+    
+    @property
+    def markdown_url(self):
+        """Get the API endpoint URL for fetching markdown content"""
+        return f"/api/notes/{self.public_id}/markdown"

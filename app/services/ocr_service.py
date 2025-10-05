@@ -180,7 +180,6 @@ Return ONLY the markdown content, no explanations."""
                         if end != -1:
                             content = content[start:end].strip()
                     
-                    all_markdown.append(f"\n\n---\n**Page {idx + 1}**\n---\n\n")
                     all_markdown.append(content)
             
             return "\n".join(all_markdown)
