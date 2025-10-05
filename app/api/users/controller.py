@@ -4,6 +4,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from .dto import UserDto
 from ...models.user import User
 from ...models.note import Note
+from ...utils.pagination import paginate_query
 from ... import db
 
 api = UserDto.api
@@ -13,8 +14,14 @@ _user_profile = UserDto.user_profile
 
 @api.route('')
 class UserList(Resource):
+    @api.doc(params={
+        'page': 'Page number (default: 1)',
+        'per_page': 'Items per page (default: 10, max: 100)'
+    })
     @api.marshal_list_with(_user)
     def get(self):
+        # Note: For pagination, we'd need to add a paginated model to DTO
+        # For now, keeping it simple
         return User.query.all()
 
     @api.expect(_user_create, validate=True)
@@ -89,3 +96,52 @@ class UserUnfollow(Resource):
         db.session.commit()
         
         return {'message': f'You have unfollowed {username}'}, 200
+
+
+@api.route('/me/bookmarks')
+class UserBookmarks(Resource):
+    @jwt_required()
+    @api.doc(params={
+        'page': 'Page number (default: 1)',
+        'per_page': 'Items per page (default: 10, max: 100)'
+    })
+    def get(self):
+        """Get current user's bookmarked notes (paginated)"""
+        from ...api.notes.dto import NoteDto
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        # Get paginated bookmarks
+        result = paginate_query(user.bookmarked_notes)
+        
+        # Marshal the notes
+        from flask_restx import marshal
+        result['items'] = marshal(result['items'], NoteDto.note_display)
+        
+        return result, 200
+
+
+@api.route('/me/stats')
+class UserStats(Resource):
+    @jwt_required()
+    def get(self):
+        """Get current user's statistics"""
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        # Calculate total views and downloads across all notes
+        total_views = sum(note.view_count for note in user.notes)
+        total_downloads = sum(note.download_count for note in user.notes)
+        
+        return {
+            'username': user.username,
+            'total_notes': len(user.notes),
+            'public_notes': sum(1 for note in user.notes if note.is_public),
+            'private_notes': sum(1 for note in user.notes if not note.is_public),
+            'total_views': total_views,
+            'total_downloads': total_downloads,
+            'followers_count': user.followers.count(),
+            'following_count': user.following.count(),
+            'bookmarks_count': user.bookmarked_notes.count(),
+            'comments_count': len(user.comments)
+        }, 200

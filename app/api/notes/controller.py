@@ -1,4 +1,4 @@
-from flask import request
+from flask import request, send_file
 from flask_restx import Resource, marshal
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from .dto import NoteDto
@@ -7,10 +7,17 @@ from ...models.user import User
 from ...models.comment import Comment
 from ...models.reaction import NoteReaction
 from ...services.file_service import save_file
+from ...services.ocr_service import ocr_service
+from ...utils.pagination import paginate_query
 from ... import db
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 api = NoteDto.api
 _note_display = NoteDto.note_display
+_note_paginated = NoteDto.note_paginated
 _note_create = NoteDto.note_create
 _comment = NoteDto.comment
 _comment_create = NoteDto.comment_create
@@ -21,35 +28,261 @@ _collaborator = NoteDto.collaborator
 
 @api.route('')
 class NoteList(Resource):
-    @api.marshal_list_with(_note_display)
+    @api.doc(params={
+        'page': 'Page number (default: 1)',
+        'per_page': 'Items per page (default: 10, max: 100)'
+    })
+    @api.marshal_with(_note_paginated)
     def get(self):
-        """List all public notes"""
-        return Note.query.filter_by(is_public=True).all()
+        """List all public notes (paginated)"""
+        query = Note.query.filter_by(is_public=True)
+        return paginate_query(query)
 
     @jwt_required()
     @api.expect(_note_create, validate=True)
     def post(self):
-        """Create a new note"""
+        """Create a new note with OCR conversion"""
         args = _note_create.parse_args()
         current_user_public_id = get_jwt_identity()
         user = User.query.filter_by(public_id=current_user_public_id).first()
 
+        # Save the original file (PDF or image)
         file = args['file']
         file_path = save_file(file)
         if not file_path:
             return {'message': 'File type not allowed or file save failed'}, 400
 
+        # Create the note with 'pending' OCR status
         new_note = Note(
             title=args['title'],
             description=args['description'],
             is_public=args['is_public'],
             owner_id=user.id,
-            file_path=file_path
+            file_path=file_path,
+            ocr_status='pending'
         )
         db.session.add(new_note)
         db.session.commit()
         
+        # Start OCR conversion asynchronously (or synchronously for now)
+        logger.info(f"Starting OCR conversion for note {new_note.public_id}")
+        
+        try:
+            # Update status to processing
+            new_note.ocr_status = 'processing'
+            db.session.commit()
+            
+            # Convert to markdown using MonkeyOCR
+            output_filename = f"note_{new_note.public_id}"
+            markdown_path = ocr_service.convert_to_markdown(file_path, output_filename)
+            
+            if markdown_path:
+                # Update note with markdown path
+                new_note.markdown_path = markdown_path
+                new_note.ocr_status = 'completed'
+                logger.info(f"OCR conversion completed for note {new_note.public_id}")
+            else:
+                new_note.ocr_status = 'failed'
+                logger.error(f"OCR conversion failed for note {new_note.public_id}")
+            
+            db.session.commit()
+            
+        except Exception as e:
+            logger.error(f"Error during OCR conversion: {str(e)}")
+            new_note.ocr_status = 'failed'
+            db.session.commit()
+        
         return marshal(new_note, _note_display), 201
+
+
+@api.route('/search')
+class NoteSearch(Resource):
+    @api.doc(params={
+        'q': 'Search query (searches in title and description)',
+        'tags': 'Comma-separated tag names',
+        'course_id': 'Filter by course ID',
+        'is_public': 'Filter by public/private (true/false)',
+        'owner': 'Filter by owner username',
+        'page': 'Page number (default: 1)',
+        'per_page': 'Items per page (default: 10, max: 100)'
+    })
+    @api.marshal_with(_note_paginated)
+    def get(self):
+        """Search and filter notes (paginated)"""
+        query = Note.query
+        
+        # Text search in title and description
+        search_text = request.args.get('q', '').strip()
+        if search_text:
+            search_pattern = f'%{search_text}%'
+            query = query.filter(
+                (Note.title.ilike(search_pattern)) |
+                (Note.description.ilike(search_pattern))
+            )
+        
+        # Filter by tags
+        tag_names = request.args.get('tags', '').strip()
+        if tag_names:
+            from ...models.tag import Tag
+            tag_list = [t.strip() for t in tag_names.split(',') if t.strip()]
+            if tag_list:
+                # Join with tags and filter
+                query = query.join(Note.tags).filter(Tag.name.in_(tag_list))
+        
+        # Filter by course
+        course_id = request.args.get('course_id', '').strip()
+        if course_id:
+            from ...models.course import Course
+            query = query.join(Note.courses).filter(Course.public_id == course_id)
+        
+        # Filter by visibility
+        is_public = request.args.get('is_public', '').strip()
+        if is_public:
+            if is_public.lower() == 'true':
+                query = query.filter(Note.is_public == True)
+            elif is_public.lower() == 'false':
+                query = query.filter(Note.is_public == False)
+        else:
+            # Default to public only if not authenticated
+            from flask_jwt_extended import verify_jwt_in_request
+            try:
+                verify_jwt_in_request(optional=True)
+                current_user_public_id = get_jwt_identity()
+                if not current_user_public_id:
+                    query = query.filter(Note.is_public == True)
+            except:
+                query = query.filter(Note.is_public == True)
+        
+        # Filter by owner username
+        owner_username = request.args.get('owner', '').strip()
+        if owner_username:
+            query = query.join(Note.owner).filter(User.username == owner_username)
+        
+        return paginate_query(query)
+
+
+@api.route('/recommended')
+class NoteRecommended(Resource):
+    @jwt_required()
+    @api.doc(params={
+        'page': 'Page number (default: 1)',
+        'per_page': 'Items per page (default: 10, max: 100)'
+    })
+    @api.marshal_with(_note_paginated)
+    def get(self):
+        """Get personalized note recommendations"""
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        from ...models.tag import Tag
+        from ...models.course import Course
+        from sqlalchemy import func, distinct
+        
+        # Build recommendation score
+        recommendations = []
+        scored_notes = {}
+        
+        # Strategy 1: Notes with tags from bookmarked notes (weight: 3)
+        bookmarked_tags = db.session.query(Tag).join(Note.tags).join(
+            user.bookmarked_notes
+        ).distinct().all()
+        
+        if bookmarked_tags:
+            tag_ids = [tag.id for tag in bookmarked_tags]
+            from ...models.associations import note_tags
+            notes_with_similar_tags = db.session.query(Note).join(note_tags).filter(
+                note_tags.c.tag_id.in_(tag_ids),
+                Note.is_public == True,
+                Note.owner_id != user.id  # Exclude own notes
+            ).distinct().all()
+            
+            for note in notes_with_similar_tags:
+                if note.public_id not in scored_notes:
+                    scored_notes[note.public_id] = {'note': note, 'score': 0}
+                scored_notes[note.public_id]['score'] += 3
+        
+        # Strategy 2: Notes from followed users (weight: 5)
+        followed_users = user.following.all()
+        if followed_users:
+            followed_user_ids = [u.id for u in followed_users]
+            notes_from_followed = Note.query.filter(
+                Note.owner_id.in_(followed_user_ids),
+                Note.is_public == True
+            ).all()
+            
+            for note in notes_from_followed:
+                if note.public_id not in scored_notes:
+                    scored_notes[note.public_id] = {'note': note, 'score': 0}
+                scored_notes[note.public_id]['score'] += 5
+        
+        # Strategy 3: Notes from user's enrolled courses (weight: 4)
+        from ...models.associations import course_users
+        user_courses = db.session.query(Course).join(course_users).filter(
+            course_users.c.user_id == user.id
+        ).all()
+        
+        if user_courses:
+            from ...models.associations import note_courses
+            course_ids = [c.id for c in user_courses]
+            notes_from_courses = db.session.query(Note).join(note_courses).filter(
+                note_courses.c.course_id.in_(course_ids),
+                Note.is_public == True,
+                Note.owner_id != user.id
+            ).distinct().all()
+            
+            for note in notes_from_courses:
+                if note.public_id not in scored_notes:
+                    scored_notes[note.public_id] = {'note': note, 'score': 0}
+                scored_notes[note.public_id]['score'] += 4
+        
+        # Strategy 4: Popular notes (most views/bookmarks) (weight: 1)
+        popular_notes = Note.query.filter(
+            Note.is_public == True,
+            Note.owner_id != user.id
+        ).order_by(Note.view_count.desc()).limit(20).all()
+        
+        for note in popular_notes:
+            if note.public_id not in scored_notes:
+                scored_notes[note.public_id] = {'note': note, 'score': 0}
+            scored_notes[note.public_id]['score'] += 1
+        
+        # Sort by score and extract notes
+        sorted_recommendations = sorted(
+            scored_notes.values(),
+            key=lambda x: x['score'],
+            reverse=True
+        )
+        recommended_notes = [item['note'] for item in sorted_recommendations]
+        
+        # If no recommendations, return popular public notes
+        if not recommended_notes:
+            recommended_notes = Note.query.filter(
+                Note.is_public == True,
+                Note.owner_id != user.id
+            ).order_by(Note.view_count.desc()).all()
+        
+        # Manually paginate the list
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        per_page = max(1, min(per_page, 100))
+        page = max(1, page)
+        
+        start = (page - 1) * per_page
+        end = start + per_page
+        
+        total = len(recommended_notes)
+        items = recommended_notes[start:end]
+        pages = (total + per_page - 1) // per_page
+        
+        return {
+            'items': items,
+            'total': total,
+            'pages': pages,
+            'current_page': page,
+            'has_next': page < pages,
+            'has_prev': page > 1
+        }
+
 
 @api.route('/<public_id>')
 @api.param('public_id', 'The note identifier')
@@ -62,6 +295,11 @@ class NoteDetail(Resource):
             # This would require auth and checking if user is owner or collaborator
             # For now, just return 403 if private
             return {'message': 'Access forbidden'}, 403
+        
+        # Increment view count
+        note.view_count += 1
+        db.session.commit()
+        
         return note
 
     @jwt_required()
@@ -237,3 +475,157 @@ class NoteCollaborators(Resource):
         db.session.commit()
         
         return marshal(collaborator, _collaborator), 201
+
+
+@api.route('/<public_id>/markdown')
+@api.param('public_id', 'The note identifier')
+class NoteMarkdown(Resource):
+    def get(self, public_id):
+        """Get the markdown content of a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        # Check OCR status
+        if note.ocr_status == 'pending':
+            return {'message': 'OCR conversion is pending', 'status': 'pending'}, 202
+        elif note.ocr_status == 'processing':
+            return {'message': 'OCR conversion is in progress', 'status': 'processing'}, 202
+        elif note.ocr_status == 'failed':
+            return {'message': 'OCR conversion failed', 'status': 'failed'}, 500
+        
+        # Check if markdown file exists
+        if not note.markdown_path or not os.path.exists(note.markdown_path):
+            return {'message': 'Markdown file not found', 'status': 'not_found'}, 404
+        
+        # Read and return markdown content
+        try:
+            with open(note.markdown_path, 'r', encoding='utf-8') as f:
+                markdown_content = f.read()
+            
+            return {
+                'status': 'completed',
+                'markdown': markdown_content,
+                'file_path': note.markdown_path
+            }, 200
+        except Exception as e:
+            logger.error(f"Error reading markdown file: {str(e)}")
+            return {'message': 'Error reading markdown file', 'status': 'error'}, 500
+
+
+@api.route('/<public_id>/download/original')
+@api.param('public_id', 'The note identifier')
+class NoteOriginalDownload(Resource):
+    def get(self, public_id):
+        """Download the original handwritten note (PDF/image)"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        if not os.path.exists(note.file_path):
+            return {'message': 'Original file not found'}, 404
+        
+        # Increment download count
+        note.download_count += 1
+        db.session.commit()
+        
+        return send_file(
+            note.file_path,
+            as_attachment=True,
+            download_name=f"{note.title}_original.{note.file_path.split('.')[-1]}"
+        )
+
+
+@api.route('/<public_id>/download/markdown')
+@api.param('public_id', 'The note identifier')
+class NoteMarkdownDownload(Resource):
+    def get(self, public_id):
+        """Download the markdown version of a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        if note.ocr_status != 'completed' or not note.markdown_path:
+            return {'message': 'Markdown file not available'}, 404
+        
+        if not os.path.exists(note.markdown_path):
+            return {'message': 'Markdown file not found'}, 404
+        
+        # Increment download count
+        note.download_count += 1
+        db.session.commit()
+        
+        return send_file(
+            note.markdown_path,
+            as_attachment=True,
+            download_name=f"{note.title}.md"
+        )
+
+
+@api.route('/<public_id>/ocr-status')
+@api.param('public_id', 'The note identifier')
+class NoteOCRStatus(Resource):
+    def get(self, public_id):
+        """Get the OCR conversion status of a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        return {
+            'public_id': note.public_id,
+            'title': note.title,
+            'ocr_status': note.ocr_status,
+            'has_markdown': note.markdown_path is not None,
+            'markdown_path': note.markdown_path
+        }, 200
+
+
+@api.route('/<public_id>/bookmark')
+@api.param('public_id', 'The note identifier')
+class NoteBookmark(Resource):
+    @jwt_required()
+    def post(self, public_id):
+        """Bookmark a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        # Check if already bookmarked
+        if note in user.bookmarked_notes:
+            return {'message': 'Note already bookmarked'}, 400
+        
+        user.bookmarked_notes.append(note)
+        db.session.commit()
+        
+        return {'message': 'Note bookmarked successfully'}, 201
+    
+    @jwt_required()
+    def delete(self, public_id):
+        """Remove bookmark from a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        # Check if bookmarked
+        if note not in user.bookmarked_notes:
+            return {'message': 'Note not bookmarked'}, 400
+        
+        user.bookmarked_notes.remove(note)
+        db.session.commit()
+        
+        return {'message': 'Bookmark removed successfully'}, 200
+
+
+@api.route('/<public_id>/stats')
+@api.param('public_id', 'The note identifier')
+class NoteStats(Resource):
+    def get(self, public_id):
+        """Get statistics for a note"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        return {
+            'public_id': note.public_id,
+            'title': note.title,
+            'view_count': note.view_count,
+            'download_count': note.download_count,
+            'comment_count': len(note.comments),
+            'collaborator_count': len(note.collaborators),
+            'bookmark_count': len(note.bookmarked_by),
+            'reaction_counts': {
+                'concise': sum(1 for r in note.reactions if r.reaction_type == 'concise'),
+                'detailed': sum(1 for r in note.reactions if r.reaction_type == 'detailed'),
+                'readable': sum(1 for r in note.reactions if r.reaction_type == 'readable')
+            }
+        }, 200

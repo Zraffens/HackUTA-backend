@@ -5,6 +5,7 @@ from .auth.controller import api as auth_ns
 from .notes.controller import api as notes_ns
 from .users.controller import api as users_ns
 from .courses.controller import api as courses_ns
+from .tags.controller import api as tags_ns
 
 api_bp = Blueprint('api', __name__)
 
@@ -18,3 +19,4 @@ api.add_namespace(auth_ns, path='/auth')
 api.add_namespace(notes_ns, path='/notes')
 api.add_namespace(users_ns, path='/users')
 api.add_namespace(courses_ns, path='/courses')
+api.add_namespace(tags_ns, path='/tags')

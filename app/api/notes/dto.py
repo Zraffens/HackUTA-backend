@@ -14,7 +14,18 @@ class NoteDto:
         'description': fields.String(description='note description'),
         'is_public': fields.Boolean(description='is note public'),
         'created_at': fields.DateTime(description='note creation date'),
-        'owner': fields.Nested(note_owner)
+        'owner': fields.Nested(note_owner),
+        'ocr_status': fields.String(description='OCR conversion status: pending, processing, completed, failed'),
+        'has_markdown': fields.Boolean(description='Whether markdown version is available')
+    })
+    
+    note_paginated = api.model('NotePaginated', {
+        'items': fields.List(fields.Nested(note_display)),
+        'total': fields.Integer(description='Total number of items'),
+        'pages': fields.Integer(description='Total number of pages'),
+        'current_page': fields.Integer(description='Current page number'),
+        'has_next': fields.Boolean(description='Whether there is a next page'),
+        'has_prev': fields.Boolean(description='Whether there is a previous page')
     })
 
     note_create = api.parser()

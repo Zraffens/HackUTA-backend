@@ -1,7 +1,7 @@
 from app.extensions import db
 import uuid
 from datetime import datetime
-from .associations import note_collaborators, note_courses
+from .associations import note_collaborators, note_courses, note_tags, user_bookmarks
 
 class Note(db.Model):
     __tablename__ = 'note'
@@ -9,8 +9,12 @@ class Note(db.Model):
     public_id = db.Column(db.String(50), unique=True, default=lambda: str(uuid.uuid4()))
     title = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text, nullable=True)
-    file_path = db.Column(db.String(255), nullable=False)
+    file_path = db.Column(db.String(255), nullable=False)  # Original handwritten note (PDF/image)
+    markdown_path = db.Column(db.String(255), nullable=True)  # Converted markdown file
+    ocr_status = db.Column(db.String(50), default='pending')  # pending, processing, completed, failed
     is_public = db.Column(db.Boolean, default=True)
+    view_count = db.Column(db.Integer, default=0)  # Track views
+    download_count = db.Column(db.Integer, default=0)  # Track downloads
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
@@ -21,3 +25,7 @@ class Note(db.Model):
                                     backref=db.backref('collaborating_notes', lazy=True))
     courses = db.relationship('Course', secondary=note_courses, lazy='subquery',
                               backref=db.backref('notes', lazy=True))
+    tags = db.relationship('Tag', secondary=note_tags, lazy='subquery',
+                           back_populates='notes')
+    bookmarked_by = db.relationship('User', secondary=user_bookmarks, lazy='subquery',
+                                    backref=db.backref('bookmarked_notes', lazy=True))

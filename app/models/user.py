@@ -2,7 +2,7 @@ from app.extensions import db
 import uuid
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from .associations import followers
+from .associations import followers, user_bookmarks
 
 class User(db.Model):
     __tablename__ = 'user'
@@ -22,6 +22,10 @@ class User(db.Model):
         primaryjoin=(followers.c.follower_id == id),
         secondaryjoin=(followers.c.followed_id == id),
         backref=db.backref('followers', lazy='dynamic'), lazy='dynamic')
+    
+    bookmarked_notes = db.relationship(
+        'Note', secondary=user_bookmarks,
+        backref=db.backref('bookmarked_by', lazy='dynamic'), lazy='dynamic')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

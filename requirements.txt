@@ -7,3 +7,6 @@ Flask-JWT-Extended
 python-dotenv
 werkzeug
 Flask-Cors
+google-genai
+Pillow
+PyMuPDF

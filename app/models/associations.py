@@ -21,3 +21,14 @@ note_courses = db.Table('note_courses',
     db.Column('course_id', db.Integer, db.ForeignKey('course.id'), primary_key=True),
     db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True)
 )
+
+note_tags = db.Table('note_tags',
+    db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True),
+    db.Column('tag_id', db.Integer, db.ForeignKey('tag.id'), primary_key=True)
+)
+
+user_bookmarks = db.Table('user_bookmarks',
+    db.Column('user_id', db.Integer, db.ForeignKey('user.id'), primary_key=True),
+    db.Column('note_id', db.Integer, db.ForeignKey('note.id'), primary_key=True),
+    db.Column('bookmarked_at', db.DateTime, default=db.func.current_timestamp())
+)
