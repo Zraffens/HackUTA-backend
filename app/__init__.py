@@ -5,6 +5,7 @@ from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from .config import config_by_name
 from .api import api_bp
+from .admin_routes import admin_routes
 
 migrate = Migrate()
 jwt = JWTManager()
@@ -29,5 +30,6 @@ def create_app(config_name='dev'):
     })
 
     app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(admin_routes)
 
     return app
