@@ -121,6 +121,27 @@ class UserBookmarks(Resource):
         return result, 200
 
 
+@api.route('/profile')
+class UserProfile(Resource):
+    @jwt_required()
+    def get(self):
+        """Get current user's profile information"""
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        if not user:
+            return {'message': 'User not found'}, 404
+        
+        return {
+            'public_id': user.public_id,
+            'username': user.username,
+            'email': user.email,
+            'is_admin': user.is_admin,
+            'profile_bio': user.profile_bio,
+            'created_at': user.created_at.isoformat() if user.created_at else None
+        }, 200
+
+
 @api.route('/me/stats')
 class UserStats(Resource):
     @jwt_required()

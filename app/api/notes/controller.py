@@ -297,7 +297,10 @@ class NoteDetail(Resource):
             return {'message': 'Access forbidden'}, 403
         
         # Increment view count
-        note.view_count += 1
+        if note.view_count is None:
+            note.view_count = 1
+        else:
+            note.view_count += 1
         db.session.commit()
         
         return note
@@ -522,7 +525,10 @@ class NoteOriginalDownload(Resource):
             return {'message': 'Original file not found'}, 404
         
         # Increment download count
-        note.download_count += 1
+        if note.download_count is None:
+            note.download_count = 1
+        else:
+            note.download_count += 1
         db.session.commit()
         
         return send_file(
@@ -546,7 +552,10 @@ class NoteMarkdownDownload(Resource):
             return {'message': 'Markdown file not found'}, 404
         
         # Increment download count
-        note.download_count += 1
+        if note.download_count is None:
+            note.download_count = 1
+        else:
+            note.download_count += 1
         db.session.commit()
         
         return send_file(

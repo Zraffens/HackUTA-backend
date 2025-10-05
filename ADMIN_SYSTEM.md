@@ -1,52 +1,62 @@
 # Admin System Documentation
 
 ## Overview
+
 The Note-Sharing Platform now includes a comprehensive admin system that allows administrators to manage users, notes, and view analytics. The system includes both API endpoints and a web-based dashboard interface.
 
 ## Admin User Setup
 
 ### Creating the First Admin User
+
 1. Run the admin creation script:
+
    ```bash
    python create_admin.py
    ```
-   
+
    This creates an admin user with:
+
    - **Username:** admin
    - **Email:** admin@hackuta.com
    - **Password:** AdminPass123!
-   
+
    **⚠️ Important:** Change the password after first login!
 
 ### Making Existing Users Admin
+
 You can promote existing users to admin through the admin dashboard or by updating the database directly.
 
 ## Admin Dashboard
 
 ### Accessing the Dashboard
+
 - **URL:** `http://localhost:5000/admin`
 - **Login:** Use admin credentials to access the dashboard
 
 ### Dashboard Features
 
 #### 1. Dashboard Overview
+
 - **User Statistics:** Total users, admin users, new registrations
 - **Note Statistics:** Total notes, public/private counts, views, downloads
 - **System Statistics:** Comments, bookmarks, tags, courses
 
 #### 2. User Management
+
 - **View all users** with pagination and search
 - **Promote/Demote** users to/from admin
 - **User details:** Registration date, note count, admin status
 - **Search functionality** by username, email, or full name
 
 #### 3. Note Management
+
 - **View all notes** with filtering and search
 - **Hide/Unhide** notes from public view
 - **Filter by status:** Public, Private, OCR status
 - **Note details:** Owner, views, downloads, OCR status
 
 #### 4. Analytics
+
 - **Popular notes** by views and downloads
 - **User growth** statistics
 - **System usage** metrics
@@ -54,19 +64,23 @@ You can promote existing users to admin through the admin dashboard or by updati
 ## API Endpoints
 
 ### Authentication
+
 All admin endpoints require:
+
 1. Valid JWT token (obtained through `/api/auth/login`)
 2. User must have `is_admin = True`
 
 ### Admin API Endpoints
 
 #### Dashboard Statistics
+
 ```http
 GET /api/admin/dashboard/stats
 Authorization: Bearer <jwt_token>
 ```
 
 **Response:**
+
 ```json
 {
   "user_stats": {
@@ -96,12 +110,14 @@ Authorization: Bearer <jwt_token>
 ```
 
 #### User Management
+
 ```http
 GET /api/admin/users?page=1&per_page=20&search=john
 Authorization: Bearer <jwt_token>
 ```
 
 **Response:**
+
 ```json
 {
   "users": [
@@ -129,6 +145,7 @@ Authorization: Bearer <jwt_token>
 ```
 
 #### User Actions
+
 ```http
 POST /api/admin/users/{user_id}/action
 Authorization: Bearer <jwt_token>
@@ -140,12 +157,14 @@ Content-Type: application/json
 ```
 
 #### Note Management
+
 ```http
 GET /api/admin/notes?page=1&per_page=20&search=calculus&status=public
 Authorization: Bearer <jwt_token>
 ```
 
 **Response:**
+
 ```json
 {
   "notes": [
@@ -173,6 +192,7 @@ Authorization: Bearer <jwt_token>
 ```
 
 #### Note Actions
+
 ```http
 POST /api/admin/notes/{note_id}/action
 Authorization: Bearer <jwt_token>
@@ -184,12 +204,14 @@ Content-Type: application/json
 ```
 
 #### Analytics
+
 ```http
 GET /api/admin/analytics/popular-notes?limit=10
 Authorization: Bearer <jwt_token>
 ```
 
 **Response:**
+
 ```json
 {
   "most_viewed": [
@@ -216,15 +238,19 @@ Authorization: Bearer <jwt_token>
 ## Security Features
 
 ### Admin Authentication Decorator
+
 The `@admin_required` decorator ensures:
+
 - User is authenticated with valid JWT
 - User has admin privileges (`is_admin = True`)
 - Proper error responses for unauthorized access
 
 ### Protection Against Self-Demotion
+
 Admins cannot demote themselves, preventing accidental loss of admin access.
 
 ### Role-Based Access Control
+
 - Regular users: Cannot access admin endpoints
 - Admin users: Full access to admin functionality
 - System validates admin status on every request
@@ -232,17 +258,21 @@ Admins cannot demote themselves, preventing accidental loss of admin access.
 ## Database Changes
 
 ### User Model Updates
+
 Added `is_admin` field to the User model:
+
 ```python
 is_admin = db.Column(db.Boolean, default=False, nullable=False)
 ```
 
 ### Migration Applied
+
 The database has been updated to include the admin field with proper defaults.
 
 ## Frontend Integration
 
 ### Admin Dashboard Features
+
 1. **Single Page Application** - All admin functionality in one interface
 2. **Responsive Design** - Works on desktop and mobile devices
 3. **Real-time Updates** - Statistics and data refresh dynamically
@@ -250,6 +280,7 @@ The database has been updated to include the admin field with proper defaults.
 5. **Pagination** - Efficient handling of large data sets
 
 ### Technology Stack
+
 - **Frontend:** Vanilla JavaScript, HTML5, CSS3
 - **Charts:** Chart.js for analytics visualization
 - **Authentication:** JWT token-based
@@ -258,6 +289,7 @@ The database has been updated to include the admin field with proper defaults.
 ## Usage Examples
 
 ### Login as Admin
+
 1. Go to `http://localhost:5000/admin`
 2. Enter admin credentials:
    - Email: `admin@hackuta.com`
@@ -265,18 +297,21 @@ The database has been updated to include the admin field with proper defaults.
 3. Access the dashboard
 
 ### Promote a User to Admin
+
 1. Navigate to "User Management"
 2. Search for the user
 3. Click "Promote" button
 4. User gains admin access immediately
 
 ### Hide Inappropriate Notes
+
 1. Navigate to "Note Management"
 2. Find the problematic note
 3. Click "Hide" to remove from public view
 4. Note becomes private instantly
 
 ### View System Statistics
+
 1. Dashboard shows real-time statistics
 2. Analytics section provides detailed insights
 3. Popular notes help identify trending content
@@ -284,6 +319,7 @@ The database has been updated to include the admin field with proper defaults.
 ## Future Enhancements
 
 ### Planned Features
+
 1. **User Suspension System** - Temporarily disable user accounts
 2. **File Management** - Clean up orphaned files
 3. **Audit Logs** - Track admin actions
@@ -292,7 +328,9 @@ The database has been updated to include the admin field with proper defaults.
 6. **Bulk Operations** - Select multiple items for batch actions
 
 ### Configuration Options
+
 Future versions will include:
+
 - Configurable admin permissions
 - Custom admin roles
 - Admin activity logging
@@ -303,28 +341,34 @@ Future versions will include:
 ### Common Issues
 
 #### Cannot Access Admin Dashboard
+
 - Verify user has `is_admin = True` in database
 - Check JWT token is valid and not expired
 - Ensure Flask application is running
 
 #### 403 Access Denied
+
 - User is not admin - check `is_admin` field
 - Token may be expired - re-login required
 - Admin decorator protection is working correctly
 
 #### Statistics Not Loading
+
 - Check database connections
 - Verify all models are properly imported
 - Check for database migration issues
 
 ### Admin User Recovery
+
 If admin access is lost:
+
 1. Run `python create_admin.py` to create new admin
 2. Or manually update database: `UPDATE user SET is_admin = 1 WHERE email = 'user@email.com'`
 
 ## Security Considerations
 
 ### Production Deployment
+
 1. **Change default admin password**
 2. **Use HTTPS** for all admin traffic
 3. **Implement rate limiting** for admin endpoints
@@ -332,6 +376,7 @@ If admin access is lost:
 5. **Regular security updates** for dependencies
 
 ### Access Control
+
 - Admin endpoints are protected by JWT + admin role check
 - No bypassing of authentication mechanisms
 - Proper error handling prevents information disclosure
