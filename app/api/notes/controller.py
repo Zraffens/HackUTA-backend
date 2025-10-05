@@ -329,8 +329,11 @@ class NoteDetail(Resource):
         current_user_public_id = get_jwt_identity()
         user = User.query.filter_by(public_id=current_user_public_id).first()
 
-        if note.owner_id != user.id:
+        # Allow deletion if user is the owner OR if user is an admin
+        if note.owner_id != user.id and not user.is_admin:
             return {'message': 'You are not the owner of this note'}, 403
+        
+        logger.info(f"User {user.username} (admin: {user.is_admin}) deleting note {public_id}: {note.title}")
         
         # Optional: delete file from filesystem
         # import os
