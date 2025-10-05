@@ -142,6 +142,21 @@ class UserProfile(Resource):
         }, 200
 
 
+@api.route('/me')
+class UserMe(Resource):
+    @jwt_required()
+    @api.marshal_with(_user)
+    def get(self):
+        """Get current user's details"""
+        current_user_public_id = get_jwt_identity()
+        user = User.query.filter_by(public_id=current_user_public_id).first()
+        
+        if not user:
+            return {'message': 'User not found'}, 404
+        
+        return user, 200
+
+
 @api.route('/me/stats')
 class UserStats(Resource):
     @jwt_required()
