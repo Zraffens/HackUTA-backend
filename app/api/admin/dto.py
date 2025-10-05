@@ -60,13 +60,79 @@ admin_note_list_model = admin_ns.model('AdminNoteList', {
 })
 
 user_action_model = admin_ns.model('UserAction', {
-    'action': fields.String(required=True, description='Action to perform', enum=['promote', 'demote', 'suspend', 'activate'])
+    'action': fields.String(required=True, description='Action to perform', enum=['promote', 'demote', 'suspend', 'activate', 'delete'])
 })
 
 note_action_model = admin_ns.model('NoteAction', {
-    'action': fields.String(required=True, description='Action to perform', enum=['hide', 'unhide', 'delete'])
+    'action': fields.String(required=True, description='Action to perform', enum=['hide', 'unhide', 'delete', 'force_delete'])
 })
 
+# New models for creating entities
+user_create_admin_model = admin_ns.model('AdminUserCreate', {
+    'username': fields.String(required=True, description='Username'),
+    'email': fields.String(required=True, description='Email address'),
+    'password': fields.String(required=True, description='Password'),
+    'is_admin': fields.Boolean(description='Admin privileges', default=False),
+    'profile_bio': fields.String(description='Profile bio')
+})
+
+note_create_admin_model = admin_ns.model('AdminNoteCreate', {
+    'title': fields.String(required=True, description='Note title'),
+    'description': fields.String(description='Note description'),
+    'owner_id': fields.String(required=True, description='Owner user ID'),
+    'is_public': fields.Boolean(description='Public visibility', default=True),
+    'file_content': fields.String(description='Base64 encoded file content'),
+    'filename': fields.String(description='Original filename')
+})
+
+comment_admin_model = admin_ns.model('AdminComment', {
+    'id': fields.Integer(description='Comment ID'),
+    'content': fields.String(description='Comment content'),
+    'author_username': fields.String(description='Author username'),
+    'note_title': fields.String(description='Note title'),
+    'created_at': fields.DateTime(description='Creation date'),
+    'note_id': fields.String(description='Note public ID')
+})
+
+comment_action_model = admin_ns.model('CommentAction', {
+    'action': fields.String(required=True, description='Action to perform', enum=['delete'])
+})
+
+tag_admin_model = admin_ns.model('AdminTag', {
+    'id': fields.Integer(description='Tag ID'),
+    'name': fields.String(description='Tag name'),
+    'created_at': fields.DateTime(description='Creation date'),
+    'notes_count': fields.Integer(description='Number of notes with this tag')
+})
+
+tag_action_model = admin_ns.model('TagAction', {
+    'action': fields.String(required=True, description='Action to perform', enum=['delete'])
+})
+
+tag_create_model = admin_ns.model('TagCreate', {
+    'name': fields.String(required=True, description='Tag name')
+})
+
+course_admin_model = admin_ns.model('AdminCourse', {
+    'id': fields.Integer(description='Course ID'),
+    'name': fields.String(description='Course name'),
+    'code': fields.String(description='Course code'),
+    'created_at': fields.DateTime(description='Creation date'),
+    'notes_count': fields.Integer(description='Number of notes in this course'),
+    'students_count': fields.Integer(description='Number of enrolled students')
+})
+
+course_action_model = admin_ns.model('CourseAction', {
+    'action': fields.String(required=True, description='Action to perform', enum=['delete'])
+})
+
+course_create_model = admin_ns.model('CourseCreate', {
+    'name': fields.String(required=True, description='Course name'),
+    'code': fields.String(required=True, description='Course code'),
+    'description': fields.String(description='Course description')
+})
+
+# Define pagination model first before using it
 pagination_model = admin_ns.model('Pagination', {
     'page': fields.Integer(description='Current page'),
     'per_page': fields.Integer(description='Items per page'),
@@ -74,6 +140,21 @@ pagination_model = admin_ns.model('Pagination', {
     'pages': fields.Integer(description='Total pages'),
     'has_prev': fields.Boolean(description='Has previous page'),
     'has_next': fields.Boolean(description='Has next page')
+})
+
+paginated_comments_model = admin_ns.model('PaginatedComments', {
+    'comments': fields.List(fields.Nested(comment_admin_model)),
+    'pagination': fields.Nested(pagination_model)
+})
+
+paginated_tags_model = admin_ns.model('PaginatedTags', {
+    'tags': fields.List(fields.Nested(tag_admin_model)),
+    'pagination': fields.Nested(pagination_model)
+})
+
+paginated_courses_model = admin_ns.model('PaginatedCourses', {
+    'courses': fields.List(fields.Nested(course_admin_model)),
+    'pagination': fields.Nested(pagination_model)
 })
 
 paginated_users_model = admin_ns.model('PaginatedUsers', {

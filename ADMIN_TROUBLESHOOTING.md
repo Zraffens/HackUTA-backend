@@ -9,10 +9,12 @@
 **Causes & Solutions:**
 
 #### A) Missing `/api/users/profile` endpoint
+
 - **Fixed in latest commit** - The endpoint now exists
 - Endpoint returns user profile including `is_admin` field
 
 #### B) User doesn't have admin privileges
+
 ```bash
 # Check if user is admin in database
 python -c "
@@ -27,6 +29,7 @@ with app.app_context():
 ```
 
 #### C) Promote existing user to admin
+
 ```bash
 # If user exists but isn't admin, promote them
 python -c "
@@ -56,17 +59,20 @@ with app.app_context():
 **Problem:** `TypeError: unsupported operand type(s) for +=: 'NoneType' and 'int'`
 
 **Fixed in latest commit:**
+
 - Added null checks before incrementing counters
 - Updated existing database records with default values
 
 ### 4. Admin User Creation
 
 **Create first admin user:**
+
 ```bash
 python create_admin.py
 ```
 
 **Default credentials:**
+
 - Email: `admin@hackuta.com`
 - Password: `AdminPass123!`
 - **Change password after first login!**
@@ -80,6 +86,7 @@ python create_admin.py
 ### 6. API Endpoint Issues
 
 **Test admin endpoints:**
+
 ```bash
 # Login and get token
 curl -X POST http://localhost:5000/api/auth/login \
@@ -98,11 +105,13 @@ curl -X GET http://localhost:5000/api/admin/dashboard/stats \
 ### 7. Frontend Issues
 
 **Admin dashboard not loading:**
+
 - Ensure Flask app is running on port 5000
 - Check browser console for JavaScript errors
 - Verify API endpoints are accessible
 
 **Login form issues:**
+
 - Check network tab for failed requests
 - Verify CORS settings allow requests
 - Ensure JWT tokens are being stored correctly
@@ -110,12 +119,14 @@ curl -X GET http://localhost:5000/api/admin/dashboard/stats \
 ### 8. Database Integrity
 
 **Check admin field exists:**
+
 ```sql
 -- Direct database query
 sqlite3 instance/note_sharing.db "PRAGMA table_info(user);"
 ```
 
 **Update counters for existing notes:**
+
 ```bash
 python -c "
 from app import create_app
@@ -157,6 +168,7 @@ with app.app_context():
 ## Support
 
 If issues persist:
+
 1. Check Flask application logs
 2. Verify database migrations are applied
 3. Test API endpoints directly with curl/Postman

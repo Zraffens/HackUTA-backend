@@ -6,7 +6,7 @@ from ...models.note import Note
 from ...models.user import User
 from ...models.comment import Comment
 from ...models.reaction import NoteReaction
-from ...services.file_service import save_file
+from ...services.file_service import save_file, fix_file_path
 from ...services.ocr_service import ocr_service
 from ...utils.pagination import paginate_query
 from ... import db
@@ -495,13 +495,17 @@ class NoteMarkdown(Resource):
         elif note.ocr_status == 'failed':
             return {'message': 'OCR conversion failed', 'status': 'failed'}, 500
         
-        # Check if markdown file exists
-        if not note.markdown_path or not os.path.exists(note.markdown_path):
+        # Check if markdown file exists with path correction
+        if not note.markdown_path:
+            return {'message': 'Markdown file not found', 'status': 'not_found'}, 404
+        
+        corrected_path = fix_file_path(note.markdown_path)
+        if not corrected_path or not os.path.exists(corrected_path):
             return {'message': 'Markdown file not found', 'status': 'not_found'}, 404
         
         # Read and return markdown content
         try:
-            with open(note.markdown_path, 'r', encoding='utf-8') as f:
+            with open(corrected_path, 'r', encoding='utf-8') as f:
                 markdown_content = f.read()
             
             return {
@@ -514,6 +518,37 @@ class NoteMarkdown(Resource):
             return {'message': 'Error reading markdown file', 'status': 'error'}, 500
 
 
+@api.route('/<public_id>/file')
+@api.param('public_id', 'The note identifier')
+class NoteFileAccess(Resource):
+    def get(self, public_id):
+        """Access the original file (for viewing/downloading)"""
+        note = Note.query.filter_by(public_id=public_id).first_or_404()
+        
+        if not note.file_path:
+            return {'message': 'File not found'}, 404
+        
+        # Fix file path and normalize separators for cross-platform compatibility
+        corrected_path = fix_file_path(note.file_path)
+        
+        if not corrected_path or not os.path.exists(corrected_path):
+            return {'message': 'File not found'}, 404
+        
+        # Increment view count (not download count for viewing)
+        if note.view_count is None:
+            note.view_count = 1
+        else:
+            note.view_count += 1
+        db.session.commit()
+        
+        # Return file for viewing (not as attachment)
+        return send_file(
+            corrected_path,
+            as_attachment=False,  # Allow inline viewing
+            download_name=f"{note.title}.{note.file_path.split('.')[-1]}"
+        )
+
+
 @api.route('/<public_id>/download/original')
 @api.param('public_id', 'The note identifier')
 class NoteOriginalDownload(Resource):
@@ -521,7 +556,13 @@ class NoteOriginalDownload(Resource):
         """Download the original handwritten note (PDF/image)"""
         note = Note.query.filter_by(public_id=public_id).first_or_404()
         
-        if not os.path.exists(note.file_path):
+        if not note.file_path:
+            return {'message': 'Original file not found'}, 404
+        
+        # Fix file path and normalize separators for cross-platform compatibility
+        corrected_path = fix_file_path(note.file_path)
+        
+        if not corrected_path or not os.path.exists(corrected_path):
             return {'message': 'Original file not found'}, 404
         
         # Increment download count
@@ -532,7 +573,7 @@ class NoteOriginalDownload(Resource):
         db.session.commit()
         
         return send_file(
-            note.file_path,
+            corrected_path,
             as_attachment=True,
             download_name=f"{note.title}_original.{note.file_path.split('.')[-1]}"
         )
@@ -548,7 +589,10 @@ class NoteMarkdownDownload(Resource):
         if note.ocr_status != 'completed' or not note.markdown_path:
             return {'message': 'Markdown file not available'}, 404
         
-        if not os.path.exists(note.markdown_path):
+        # Fix file path and normalize separators for cross-platform compatibility
+        corrected_path = fix_file_path(note.markdown_path)
+        
+        if not corrected_path or not os.path.exists(corrected_path):
             return {'message': 'Markdown file not found'}, 404
         
         # Increment download count
@@ -559,7 +603,7 @@ class NoteMarkdownDownload(Resource):
         db.session.commit()
         
         return send_file(
-            note.markdown_path,
+            corrected_path,
             as_attachment=True,
             download_name=f"{note.title}.md"
         )
